@@ -12,6 +12,7 @@ Options:
   -v, --version VERSION   Specify the VeraCrypt version to use
   -d, --directory DIR     Specify the output directory for the AppImage (default: current directory)
   --no-progress           Hide download progress
+  -t, --type TYPE         Specify the VeraCrypt type (gui, gtk2-gui, console) (default: gui)
 
 If no version is specified, the latest version from GitHub will be used.
 EOF
@@ -54,6 +55,7 @@ get_latest_version() {
 
 # Initialize variables
 show_progress=true
+veracrypt_type="gui"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -74,6 +76,10 @@ while [[ $# -gt 0 ]]; do
             show_progress=false
             shift
             ;;
+        -t|--type)
+            veracrypt_type="$2"
+            shift 2
+            ;;
         *)
             echo "An invalid option \"$1\" was specified; use -h or --help for usage instructions"
             show_help
@@ -81,6 +87,12 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Validate veracrypt_type
+if [[ ! "$veracrypt_type" =~ ^(gui|gtk2-gui|console)$ ]]; then
+    echo "Error: Invalid VeraCrypt type. Use 'gui', 'gtk2-gui', or 'console'."
+    exit 1
+fi
 
 # Set default output directory if not specified
 output_dir="${output_dir:-$(pwd)}"
@@ -146,12 +158,12 @@ tar -xjf "veracrypt-${version}-setup.tar.bz2" -C veracrypt_archive
 cd veracrypt_archive
 
 # Make the setup script executable
-chmod +x "veracrypt-${version}-setup-gui-x64"
+chmod +x "veracrypt-${version}-setup-${veracrypt_type}-x64"
 
 # Extract veracrypt tar from self extracting script with --noexec option
-./veracrypt-${version}-setup-gui-x64 --noexec --target .
-PACKAGE_START=$(head -n 100 veracrypt_install_gui_x64.sh| grep -n '^PACKAGE_START=' | cut -d'=' -f2)
-tail -n +$PACKAGE_START veracrypt_install_gui_x64.sh > veracrypt_${version}_gui_amd64.tar.gz
+./veracrypt-${version}-setup-${veracrypt_type}-x64 --noexec --target .
+PACKAGE_START=$(head -n 20 veracrypt_install_${veracrypt_type}_x64.sh| grep -n '^PACKAGE_START=' | cut -d'=' -f2)
+tail -n +$PACKAGE_START veracrypt_install_${veracrypt_type}_x64.sh > veracrypt_${version}_${veracrypt_type}_amd64.tar.gz
 
 # Return to work directory
 cd ..
@@ -159,13 +171,17 @@ cd ..
 # Create veracrypt.AppDir and extract VeraCrypt files into it
 echo "Creating AppImage structure..."
 mkdir veracrypt.AppDir
-tar -xzf "veracrypt_archive/veracrypt_${version}_gui_amd64.tar.gz" -C veracrypt.AppDir
+tar -xzf "veracrypt_archive/veracrypt_${version}_${veracrypt_type}_amd64.tar.gz" -C veracrypt.AppDir
 
 # Change to veracrypt.AppDir
 cd veracrypt.AppDir
 
-# Copy Icon
-cp ./usr/share/pixmaps/veracrypt.xpm .
+# Copy or download Icon
+if [ -f ./usr/share/pixmaps/veracrypt.xpm ]; then
+    cp ./usr/share/pixmaps/veracrypt.xpm .
+else
+    download_file "https://raw.githubusercontent.com/veracrypt/VeraCrypt/master/src/Resources/Icons/VeraCrypt-256x256.xpm" "veracrypt.xpm"
+fi
 
 # Create desktop file
 cat > veracrypt.desktop <<EOF
@@ -195,13 +211,13 @@ chmod a+x appimagetool-x86_64.AppImage
 
 # Create AppImage
 echo "Generating AppImage..."
-./appimagetool-x86_64.AppImage veracrypt.AppDir ./Veracrypt-${version}-x86_64.AppImage
+./appimagetool-x86_64.AppImage veracrypt.AppDir ./Veracrypt-${version}-${veracrypt_type}-x86_64.AppImage
 
 # Move AppImage to output directory
-mv Veracrypt-${version}-x86_64.AppImage "$output_dir/"
+mv Veracrypt-${version}-${veracrypt_type}-x86_64.AppImage "$output_dir/"
 
 # Clean up
 cd /
 rm -rf "$work_dir"
 
-echo "Successfully created VeraCrypt AppImage and saved to $output_dir"
+echo "Successfully created VeraCrypt AppImage (${veracrypt_type}) and saved to $output_dir"

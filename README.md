@@ -30,10 +30,20 @@ This script automates the process of creating an AppImage for VeraCrypt, allowin
 
 ### Options
 
-- `-h, --help`: Show help message and exit
-- `-v, --version VERSION`: Specify the VeraCrypt version to use
-- `-d, --directory DIR`: Specify the output directory for the AppImage (default: current directory)
-- `--no-progress`: Hide download progress
+```
+Usage: ./veracrypt-appimage-builder.sh [OPTIONS]
+
+Create a VeraCrypt AppImage.
+
+Options:
+  -h, --help              Show this help message and exit
+  -v, --version VERSION   Specify the VeraCrypt version to use
+  -d, --directory DIR     Specify the output directory for the AppImage (default: current directory)
+  --no-progress           Hide download progress
+  -t, --type TYPE         Specify the VeraCrypt type (gui, gtk2-gui, console) (default: gui)
+
+If no version is specified, the latest version from GitHub will be used.
+```
 
 ## Examples
 
@@ -45,3 +55,6 @@ This script automates the process of creating an AppImage for VeraCrypt, allowin
    ```
    ./veracrypt-appimage-builder.sh -v 1.25.9
    ```
+
+## Known Issues
+- The gtk2-gui Type does not work
