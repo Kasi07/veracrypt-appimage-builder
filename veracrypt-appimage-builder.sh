@@ -202,6 +202,6 @@ mv Veracrypt-${version}-x86_64.AppImage "$output_dir/"
 
 # Clean up
 cd /
-# rm -rf "$work_dir"
+rm -rf "$work_dir"
 
 echo "Successfully created VeraCrypt AppImage and saved to $output_dir"
