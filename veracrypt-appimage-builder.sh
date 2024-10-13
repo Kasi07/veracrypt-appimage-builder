@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e  # Exit immediately if a command exits with a non-zero status
+
 # Function to display help
 show_help() {
     cat << EOF
@@ -29,15 +31,15 @@ download_file() {
     local output="$2"
     if [ "$DOWNLOAD_TOOL" = "wget" ]; then
         if [ "$show_progress" = true ]; then
-            wget --show-progress -q "$url" -O "$output"
+            wget --show-progress -q "$url" -O "$output" || { echo "Error: Failed to download $url"; exit 1; }
         else
-            wget -q "$url" -O "$output"
+            wget -q "$url" -O "$output" || { echo "Error: Failed to download $url"; exit 1; }
         fi
     else
         if [ "$show_progress" = true ]; then
-            curl -L "$url" -o "$output" --progress-bar
+            curl -L "$url" -o "$output" --progress-bar || { echo "Error: Failed to download $url"; exit 1; }
         else
-            curl -sL "$url" -o "$output"
+            curl -sL "$url" -o "$output" || { echo "Error: Failed to download $url"; exit 1; }
         fi
     fi
 }
@@ -46,9 +48,9 @@ download_file() {
 get_latest_version() {
     local latest_version
     if [ "$DOWNLOAD_TOOL" = "wget" ]; then
-        latest_version=$(wget -qO- "https://api.github.com/repos/veracrypt/VeraCrypt/releases/latest" | grep -oP '"tag_name": "\K(.*)(?=")')
+        latest_version=$(wget -qO- "https://api.github.com/repos/veracrypt/VeraCrypt/releases/latest" | grep -oP '"tag_name": "\K(.*)(?=")') || { echo "Error: Failed to fetch latest version"; exit 1; }
     else
-        latest_version=$(curl -s "https://api.github.com/repos/veracrypt/VeraCrypt/releases/latest" | grep -oP '"tag_name": "\K(.*)(?=")')
+        latest_version=$(curl -s "https://api.github.com/repos/veracrypt/VeraCrypt/releases/latest" | grep -oP '"tag_name": "\K(.*)(?=")') || { echo "Error: Failed to fetch latest version"; exit 1; }
     fi
     echo "${latest_version#VeraCrypt_}"
 }
@@ -97,13 +99,19 @@ fi
 # Set default output directory if not specified
 output_dir="${output_dir:-$(pwd)}"
 
+# Check if output directory exists and is writable
+if [ ! -d "$output_dir" ] || [ ! -w "$output_dir" ]; then
+    echo "Error: Output directory does not exist or is not writable: $output_dir"
+    exit 1
+fi
+
 # Determine which download tool to use
 if command_exists wget; then
     DOWNLOAD_TOOL="wget"
 elif command_exists curl; then
     DOWNLOAD_TOOL="curl"
 else
-    echo "wget or curl is required for downloading files. Please ensure one is installed before running."
+    echo "Error: wget or curl is required for downloading files. Please ensure one is installed before running."
     exit 1
 fi
 
@@ -116,7 +124,7 @@ else
 fi
 
 # Create working directory in /tmp
-work_dir=$(mktemp -d)
+work_dir=$(mktemp -d) || { echo "Error: Failed to create temporary directory"; exit 1; }
 cd "$work_dir"
 
 # Download VeraCrypt release
@@ -129,7 +137,7 @@ checksum_url="https://launchpad.net/veracrypt/trunk/${version}/+download/veracry
 download_file "$checksum_url" "veracrypt-${version}-sha512sum.txt"
 
 # Extract the correct checksum for the setup file
-expected_checksum=$(grep "veracrypt-${version}-setup.tar.bz2" "veracrypt-${version}-sha512sum.txt" | awk '{print $1}')
+expected_checksum=$(grep "veracrypt-${version}-setup.tar.bz2" "veracrypt-${version}-sha512sum.txt" | awk '{print $1}') || { echo "Error: Failed to extract checksum from veracrypt-${version}-sha512sum.txt"; exit 1; }
 
 # Calculate the actual checksum of the downloaded file
 if command_exists sha512sum; then
@@ -151,27 +159,27 @@ fi
 
 # Extract the setup.tar to veracrypt_archive
 echo "Extracting VeraCrypt files..."
-mkdir veracrypt_archive
-tar -xjf "veracrypt-${version}-setup.tar.bz2" -C veracrypt_archive
+mkdir veracrypt_archive || { echo "Error: Failed to create veracrypt_archive directory"; exit 1; }
+tar -xjf "veracrypt-${version}-setup.tar.bz2" -C veracrypt_archive || { echo "Error: Failed to extract VeraCrypt archive"; exit 1; }
 
 # Change to veracrypt_archive directory
 cd veracrypt_archive
 
 # Make the setup script executable
-chmod +x "veracrypt-${version}-setup-${veracrypt_type}-x64"
+chmod +x "veracrypt-${version}-setup-${veracrypt_type}-x64" || { echo "Error: Failed to make setup script executable"; exit 1; }
 
 # Extract veracrypt tar from self extracting script with --noexec option
-./veracrypt-${version}-setup-${veracrypt_type}-x64 --noexec --target .
-PACKAGE_START=$(head -n 20 veracrypt_install_${veracrypt_type}_x64.sh| grep -n '^PACKAGE_START=' | cut -d'=' -f2)
-tail -n +$PACKAGE_START veracrypt_install_${veracrypt_type}_x64.sh > veracrypt_${version}_${veracrypt_type}_amd64.tar.gz
+./veracrypt-${version}-setup-${veracrypt_type}-x64 --noexec --target . || { echo "Error: Failed to extract VeraCrypt tar"; exit 1; }
+PACKAGE_START=$(head -n 100 veracrypt_install_${veracrypt_type}_x64.sh | grep -n '^PACKAGE_START=' | cut -d'=' -f2) || { echo "Error: Failed to find PACKAGE_START"; exit 1; }
+tail -n +$PACKAGE_START veracrypt_install_${veracrypt_type}_x64.sh > veracrypt_${version}_${veracrypt_type}_amd64.tar.gz || { echo "Error: Failed to extract VeraCrypt package"; exit 1; }
 
 # Return to work directory
 cd ..
 
 # Create veracrypt.AppDir and extract VeraCrypt files into it
 echo "Creating AppImage structure..."
-mkdir veracrypt.AppDir
-tar -xzf "veracrypt_archive/veracrypt_${version}_${veracrypt_type}_amd64.tar.gz" -C veracrypt.AppDir
+mkdir veracrypt.AppDir || { echo "Error: Failed to create veracrypt.AppDir"; exit 1; }
+tar -xzf "veracrypt_archive/veracrypt_${version}_${veracrypt_type}_amd64.tar.gz" -C veracrypt.AppDir || { echo "Error: Failed to extract VeraCrypt files to AppDir"; exit 1; }
 
 # Change to veracrypt.AppDir
 cd veracrypt.AppDir
@@ -184,7 +192,7 @@ else
 fi
 
 # Create desktop file
-cat > veracrypt.desktop <<EOF
+cat > veracrypt.desktop <<EOF || { echo "Error: Failed to create desktop file"; exit 1; }
 [Desktop Entry]
 Version=1.0
 Name=VeraCrypt
@@ -199,7 +207,7 @@ EOF
 # Download AppRun
 echo "Fetching AppRun for the AppImage..."
 download_file "https://github.com/AppImage/AppImageKit/releases/latest/download/AppRun-x86_64" "AppRun"
-chmod a+x AppRun
+chmod a+x AppRun || { echo "Error: Failed to make AppRun executable"; exit 1; }
 
 # Return to work directory
 cd ..
@@ -207,17 +215,17 @@ cd ..
 # Download appimagetool
 echo "Retrieving appimagetool to create the final AppImage..."
 download_file "https://github.com/AppImage/AppImageKit/releases/latest/download/appimagetool-x86_64.AppImage" "appimagetool-x86_64.AppImage"
-chmod a+x appimagetool-x86_64.AppImage
+chmod a+x appimagetool-x86_64.AppImage || { echo "Error: Failed to make appimagetool executable"; exit 1; }
 
 # Create AppImage
 echo "Generating AppImage..."
-./appimagetool-x86_64.AppImage veracrypt.AppDir ./Veracrypt-${version}-${veracrypt_type}-x86_64.AppImage
+./appimagetool-x86_64.AppImage veracrypt.AppDir ./Veracrypt-${version}-${veracrypt_type}-x86_64.AppImage || { echo "Error: Failed to create AppImage"; exit 1; }
 
 # Move AppImage to output directory
-mv Veracrypt-${version}-${veracrypt_type}-x86_64.AppImage "$output_dir/"
+mv Veracrypt-${version}-${veracrypt_type}-x86_64.AppImage "$output_dir/" || { echo "Error: Failed to move AppImage to output directory"; exit 1; }
 
 # Clean up
 cd /
-rm -rf "$work_dir"
+rm -rf "$work_dir" || { echo "Error: Failed to remove temporary directory"; exit 1; }
 
 echo "Successfully created VeraCrypt AppImage (${veracrypt_type}) and saved to $output_dir"
